@@ -46,3 +46,12 @@ services:
     volumes:
       - ./nim-cache:/opt/nim/.cache
     restart: unless-stopped
+    # 段階6-2-d: gateway compose の depends_on(condition: service_healthy) から
+    # 参照するため、NIM HTTP の /v1/health/ready を健康判定に使う。
+    # 初回起動はモデル DL に 100 秒前後かかるため start_period を長めに取る。
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/v1/health/ready | grep -q '\"ready\"' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 120s

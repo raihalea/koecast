@@ -1,0 +1,53 @@
+# 段階6-2-d: koecast ゲートウェイ本体の compose。
+#
+# Riva NIM は server/deploy/riva-nim.compose.yml の `parakeet` サービスを参照する。
+# 起動は両 compose を同時に渡す:
+#
+#   cd <repo root>
+#   export NGC_API_KEY=<...>
+#   mkdir -p server/deploy/nim-cache
+#   docker compose \
+#     -f server/deploy/docker-compose.yml \
+#     -f server/deploy/riva-nim.compose.yml \
+#     up -d --build
+#
+# 起動順序制御:
+#   - gateway は depends_on(condition: service_healthy) で parakeet の
+#     /v1/health/ready が ready になるのを待つ
+#   - parakeet の healthcheck は riva-nim.compose.yml 側に定義
+#
+# 外部接続:
+#   - WebSocket: host の 8000 → gateway の 8000
+#   - LLM (qwen36-mtp): hermes-stack_default ネットワーク内の qwen36-mtp:8080 に
+#     gateway を attach して接続する (qwen36-mtp は別管理 compose で起動済み、
+#     host 側 port は 127.0.0.1 にしかバインドされていないため host-gateway 経由は不可)
+
+name: koecast
+
+services:
+  gateway:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    image: koecast-gateway:dev
+    container_name: koecast-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      KOECAST_BIND_HOST: "0.0.0.0"
+      KOECAST_BIND_PORT: "8000"
+      KOECAST_RIVA_ADDRESS: "parakeet:50051"
+      KOECAST_LLM_URL: "http://qwen36-mtp:8080/v1/chat/completions"
+    networks:
+      - default      # parakeet と通信するネットワーク (koecast_default)
+      - llm_backend  # qwen36-mtp のネットワーク (hermes-stack_default)
+    depends_on:
+      parakeet:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+  llm_backend:
+    name: hermes-stack_default
+    external: true
