@@ -21,6 +21,10 @@ build/
 # --- Riva NIM ---
 server/deploy/nim-cache/
 
+# --- 検証用音声サンプル ---
+/sample.wav
+/*.wav
+
 # --- Rust / Tauri ---
 /target/
 client/target/

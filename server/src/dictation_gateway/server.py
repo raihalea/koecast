@@ -1,14 +1,16 @@
 """WebSocket サーバ本体と接続状態機械。
 
-段階6-2-b スコープ:
+段階6-2-c までのスコープ:
   - 段階6-2-a の WebSocket スケルトン + 状態機械を維持
-  - `start` で Riva ASR NIM セッションを開く
+  - `start` で Riva ASR NIM セッションを開き、`start.context` / `enable_formatting` を保持
   - Binary フレーム (PCM) を riva_bridge 経由で Riva に転送
-  - Riva の partial → `partial` メッセージ、is_final=True → `final` メッセージ
-  - `stop` で Riva セッションを close → 残り final を flush → `session_end` を送る
-  - エラー処理: `RIVA_UNAVAILABLE` (recoverable=false) / `RIVA_STREAM_ERROR` (recoverable=false)
+  - Riva の partial → `partial` メッセージ、is_final=True → `final` + LLM 整形 → `formatted`
+  - `stop` で Riva セッションを close → 残り final を drain → `session_end` を送る
+  - エラー処理:
+    - `RIVA_UNAVAILABLE` (recoverable=false) / `RIVA_STREAM_ERROR` (recoverable=false)
+    - LLM 失敗は formatted{fallback=true} で吸収 (接続は閉じない、error も出さない)
   - `start.audio` の意味検証: sample_rate != 16000 / channels != 1 → `AUDIO_FORMAT_REJECTED`
-  - `formatted` メッセージは段階6-2-c で追加 (本段階では送らない)
+  - `enable_formatting=false` のとき `formatted` は送らない (final のみ)
 
 接続状態 (docs/dictation-gateway-protocol-v1.md §2):
   READY → (start) → LISTENING → (stop, session_end 送信) → READY → ...
@@ -26,10 +28,12 @@ from pydantic import TypeAdapter, ValidationError
 from websockets.asyncio.server import ServerConnection
 
 from .config import Config, load_config
+from .llm import LlmClient
 from .protocol import (
     ClientMessage,
     ErrorMessage,
     FinalMessage,
+    FormattedMessage,
     PartialMessage,
     PingMessage,
     ReadyDefaults,
@@ -107,25 +111,56 @@ def _is_unsupported_version_error(exc: ValidationError) -> bool:
 
 
 async def _forward_results(
-    session: _RivaSession, ws: ServerConnection
+    session: _RivaSession,
+    ws: ServerConnection,
+    llm: LlmClient,
+    *,
+    enable_formatting: bool,
+    context_terms: list[str],
 ) -> None:
-    """Riva セッションの結果を WS に橋渡す。session 終了で自然終了する。"""
+    """Riva セッションの結果を WS に橋渡す。session 終了で自然終了する。
+
+    final を観測したら LLM 整形を呼び、formatted を送出する。
+    enable_formatting=False のときは formatted を送らず final のみ。
+    LLM 失敗は llm.format() が fallback=True で吸収するため、接続は閉じない。
+    """
     try:
         async for result in session.results():
             assert isinstance(result, StreamingResult)
             if result.is_final:
-                msg = FinalMessage(
-                    type="final",
-                    segment_id=result.segment_id,
-                    text=result.text,
+                await _send(
+                    ws,
+                    FinalMessage(
+                        type="final",
+                        segment_id=result.segment_id,
+                        text=result.text,
+                    ),
                 )
+                # LLM 整形 → formatted。enable_formatting=False ならスキップ (None 返り)。
+                formatted = await llm.format(
+                    result.text,
+                    enable_formatting=enable_formatting,
+                    context_terms=context_terms,
+                )
+                if formatted is not None:
+                    await _send(
+                        ws,
+                        FormattedMessage(
+                            type="formatted",
+                            segment_id=result.segment_id,
+                            text=formatted.text,
+                            fallback=formatted.fallback,
+                        ),
+                    )
             else:
-                msg = PartialMessage(
-                    type="partial",
-                    segment_id=result.segment_id,
-                    text=result.text,
+                await _send(
+                    ws,
+                    PartialMessage(
+                        type="partial",
+                        segment_id=result.segment_id,
+                        text=result.text,
+                    ),
                 )
-            await _send(ws, msg)
     except RivaUnavailable as e:
         # 接続全体に関するエラー: segment_id は付けない (仕様 §5.6)
         try:
@@ -177,9 +212,14 @@ async def handle_connection(ws: ServerConnection, config: Config) -> None:
     await _send(ws, ready)
 
     bridge = RivaBridge(config)
+    llm = LlmClient(config)
     state = State.READY
     current_session: Optional[_RivaSession] = None
     forward_task: Optional[asyncio.Task] = None
+    # 各 session の enable_formatting / context は start ごとにここに保持し、
+    # _forward_results に渡す。stop でリセット。
+    current_enable_formatting: bool = True
+    current_context_terms: list[str] = []
 
     async def end_current_session() -> int:
         """進行中の session を閉じて drain し、観測した final 数を返す (idempotent)。"""
@@ -266,11 +306,24 @@ async def handle_connection(ws: ServerConnection, config: Config) -> None:
                         )
                         continue
 
-                # 段階6-2-c: parsed.context を llm.py に橋渡す予定。
-                # ここでは start を契機に Riva セッションを開く (eager)。
+                # spec §4.1: enable_formatting 省略時は True (= LLM 整形あり)。
+                current_enable_formatting = (
+                    parsed.enable_formatting
+                    if parsed.enable_formatting is not None
+                    else True
+                )
+                current_context_terms = list(parsed.context or [])
+
+                # start を契機に Riva セッションを開く (eager, 判断保留 #1 を維持)
                 current_session = bridge.open_session()
                 forward_task = asyncio.create_task(
-                    _forward_results(current_session, ws)
+                    _forward_results(
+                        current_session,
+                        ws,
+                        llm,
+                        enable_formatting=current_enable_formatting,
+                        context_terms=current_context_terms,
+                    )
                 )
                 state = State.LISTENING
                 continue
