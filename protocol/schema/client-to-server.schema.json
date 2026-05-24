@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dictation Gateway v1 — Client → Server message",
+  "description": "クライアントからゲートウェイへ送る Text フレーム JSON。Binary フレーム (PCM 音声) は本 schema の対象外。",
+  "oneOf": [
+    { "$ref": "#/$defs/start" },
+    { "$ref": "#/$defs/stop" },
+    { "$ref": "#/$defs/ping" }
+  ],
+  "$defs": {
+    "start": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "start" },
+        "protocol_version": { "const": 1 },
+        "audio": { "$ref": "#/$defs/audio" },
+        "language": { "type": "string" },
+        "enable_formatting": { "type": "boolean" },
+        "context": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["type", "protocol_version"],
+      "additionalProperties": false
+    },
+    "stop": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "stop" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "ping": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ping" }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "sample_rate": { "type": "integer" },
+        "encoding": { "enum": ["LINEAR_PCM"] },
+        "channels": { "type": "integer" }
+      },
+      "required": ["sample_rate", "encoding", "channels"],
+      "additionalProperties": false
+    }
+  }
+}

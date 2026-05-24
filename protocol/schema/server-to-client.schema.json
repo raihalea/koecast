@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dictation Gateway v1 — Server → Client message",
+  "description": "ゲートウェイからクライアントへ送る Text フレーム JSON。",
+  "oneOf": [
+    { "$ref": "#/$defs/ready" },
+    { "$ref": "#/$defs/partial" },
+    { "$ref": "#/$defs/final" },
+    { "$ref": "#/$defs/formatted" },
+    { "$ref": "#/$defs/session_end" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "ready": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "ready" },
+        "protocol_version": { "const": 1 },
+        "server": { "type": "string" },
+        "defaults": {
+          "type": "object",
+          "properties": {
+            "sample_rate": { "type": "integer" },
+            "encoding": { "enum": ["LINEAR_PCM"] },
+            "language": { "type": "string" }
+          },
+          "required": ["sample_rate", "encoding", "language"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "protocol_version", "server", "defaults"],
+      "additionalProperties": false
+    },
+    "partial": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "partial" },
+        "segment_id": { "type": "integer" },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "segment_id", "text"],
+      "additionalProperties": false
+    },
+    "final": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "final" },
+        "segment_id": { "type": "integer" },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "segment_id", "text"],
+      "additionalProperties": false
+    },
+    "formatted": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "formatted" },
+        "segment_id": { "type": "integer" },
+        "text": { "type": "string" },
+        "fallback": { "type": "boolean" }
+      },
+      "required": ["type", "segment_id", "text", "fallback"],
+      "additionalProperties": false
+    },
+    "session_end": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "session_end" },
+        "segments": { "type": "integer" }
+      },
+      "required": ["type", "segments"],
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "error" },
+        "code": {
+          "enum": [
+            "BAD_MESSAGE",
+            "UNSUPPORTED_VERSION",
+            "AUDIO_FORMAT_REJECTED",
+            "RIVA_UNAVAILABLE",
+            "RIVA_STREAM_ERROR",
+            "LLM_UNAVAILABLE",
+            "INTERNAL"
+          ]
+        },
+        "message": { "type": "string" },
+        "segment_id": { "type": "integer" },
+        "recoverable": { "type": "boolean" }
+      },
+      "required": ["type", "code", "message", "recoverable"],
+      "additionalProperties": false
+    }
+  }
+}

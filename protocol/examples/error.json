@@ -1,0 +1,6 @@
+{
+  "type": "error",
+  "code": "RIVA_UNAVAILABLE",
+  "message": "Riva backend not reachable",
+  "recoverable": false
+}

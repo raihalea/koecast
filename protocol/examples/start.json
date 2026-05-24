@@ -1,0 +1,8 @@
+{
+  "type": "start",
+  "protocol_version": 1,
+  "audio": { "sample_rate": 16000, "encoding": "LINEAR_PCM", "channels": 1 },
+  "language": "ja-JP",
+  "enable_formatting": true,
+  "context": ["ThreatLens", "Bedrock"]
+}

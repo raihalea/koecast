@@ -1,0 +1,6 @@
+{
+  "type": "ready",
+  "protocol_version": 1,
+  "server": "dictation-gateway/1.0",
+  "defaults": { "sample_rate": 16000, "encoding": "LINEAR_PCM", "language": "ja-JP" }
+}

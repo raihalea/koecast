@@ -1,0 +1,37 @@
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+dist/
+build/
+
+# --- Rust / Tauri ---
+/target/
+client/src-tauri/target/
+client/src-tauri/gen/
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+
+# --- Vite ---
+client/dist/
+
+# --- editors / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
