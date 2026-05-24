@@ -1,0 +1,9 @@
+# client/ ワークスペース。
+#
+# protocol クレートを src-tauri から独立させ、契約テストが Tauri の OS 依存
+# (libdbus 等) を永久に巻き込まない構造にする。詳細は
+# `docs/stage6-readiness.md` §5 を参照。
+
+[workspace]
+resolver = "2"
+members = ["protocol", "src-tauri"]

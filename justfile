@@ -18,10 +18,12 @@ client:
     @echo "TODO(stage-3+): cd client && npm run tauri dev"
 
 # server / client / 契約テストを通す
-# 段階5時点で server (pytest) と client (cargo test) の両側の契約テストが揃った。
+# 段階6-1 で client/ を Cargo workspace 化し、protocol クレートを src-tauri から
+# 切り出した。契約テストは client/protocol/tests/ に移動。Tauri OS 依存とは無関係に
+# `cargo test --workspace` で完結する。
 test:
     cd server && uv run pytest
-    cd client/src-tauri && cargo test --tests
+    cd client && cargo test --workspace --tests
 
 # lint (全言語)
 lint:

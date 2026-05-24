@@ -5,26 +5,19 @@ description = "koecast dictation client (Tauri)"
 edition = "2021"
 rust-version = "1.77"
 
-# NOTE: tauri / tauri-build は段階5時点では意図的に外している。
-# 理由: 段階5 (protocol 契約テスト) は serde / serde_json / jsonschema だけで
-# 完結する。Tauri を依存に入れると推移依存 libdbus-sys 経由で dbus-1 等の OS
-# システムライブラリを引きに行き、契約テストに無関係な OS 依存が混ざる
-# (monorepo-design.md セクション10 の「Tauri OS 依存」は実機ビルド検証時まで
-# 保留している)。
-#
-# 段階6 (Tauri アプリ実装本体) の着手時に以下を復活させる:
+# NOTE: tauri / tauri-build は段階5 で外したまま、段階6 でも本ファイル内では
+# まだ復活させない。実装本体 (ws.rs / audio.rs / hotkey.rs / inject.rs /
+# overlay.rs / main.rs) に着手するタイミングで以下を追加する:
 #   [build-dependencies]
 #   tauri-build = { version = "2", features = [] }
 #   [dependencies]
 #   tauri = { version = "2", features = [] }
+# このときに devenv.nix に Tauri OS 依存 (WebKitGTK / libsoup / dbus 等) を追記
+# する (monorepo-design.md §10 / docs/stage6-readiness.md §3.3)。
 #
-# そのタイミングで、protocol 型を src-tauri から独立クレートに切り出す
-# (client/protocol/ ＋ workspace 化) を併せて検討する。契約テストが Tauri の
-# OS 依存を永久に巻き込まない構造にするため。
+# protocol 型は別クレート koecast-protocol に切り出した (段階6-1)。
+# 契約テストはそちらに移動し、本クレートは Tauri OS 依存を一切引かない契約テスト
+# 経路を持たないことになる (docs/stage6-readiness.md §5)。
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-[dev-dependencies]
-jsonschema = "0.33.0"
+koecast-protocol = { path = "../protocol" }

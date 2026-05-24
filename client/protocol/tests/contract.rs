@@ -11,11 +11,13 @@
 use std::path::PathBuf;
 
 use jsonschema::Validator;
-use koecast_client::protocol::{ClientMessage, ServerMessage};
+use koecast_protocol::{ClientMessage, ServerMessage};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 fn protocol_dir() -> PathBuf {
+    // CARGO_MANIFEST_DIR = client/protocol/
+    // ../../protocol = リポジトリ直下の protocol/
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../protocol")
 }
 

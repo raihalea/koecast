@@ -456,6 +456,13 @@ dependencies = [
 name = "koecast-client"
 version = "0.1.0"
 dependencies = [
+ "koecast-protocol",
+]
+
+[[package]]
+name = "koecast-protocol"
+version = "0.1.0"
+dependencies = [
  "jsonschema",
  "serde",
  "serde_json",
