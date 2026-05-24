@@ -41,8 +41,9 @@ CASES: list[tuple[str, jsonschema.Draft202012Validator, TypeAdapter]] = [
     ("partial.json",     S2C_VALIDATOR, ServerAdapter),
     ("final.json",       S2C_VALIDATOR, ServerAdapter),
     ("formatted.json",   S2C_VALIDATOR, ServerAdapter),
-    ("session_end.json", S2C_VALIDATOR, ServerAdapter),
-    ("error.json",       S2C_VALIDATOR, ServerAdapter),
+    ("session_end.json",       S2C_VALIDATOR, ServerAdapter),
+    ("error.json",             S2C_VALIDATOR, ServerAdapter),
+    ("error_with_segment.json", S2C_VALIDATOR, ServerAdapter),
 ]
 
 

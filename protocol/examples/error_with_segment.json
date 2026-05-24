@@ -1,0 +1,7 @@
+{
+  "type": "error",
+  "code": "RIVA_STREAM_ERROR",
+  "message": "Riva stream aborted unexpectedly",
+  "segment_id": 7,
+  "recoverable": false
+}
