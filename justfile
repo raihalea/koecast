@@ -18,9 +18,10 @@ client:
     @echo "TODO(stage-3+): cd client && npm run tauri dev"
 
 # server / client / 契約テストを通す
-# 段階4時点では server pytest (= 契約テスト) のみ。client cargo test は段階5以降で追加。
+# 段階5時点で server (pytest) と client (cargo test) の両側の契約テストが揃った。
 test:
     cd server && uv run pytest
+    cd client/src-tauri && cargo test --tests
 
 # lint (全言語)
 lint:
