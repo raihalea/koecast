@@ -18,6 +18,9 @@ __pycache__/
 dist/
 build/
 
+# --- Riva NIM ---
+server/deploy/nim-cache/
+
 # --- Rust / Tauri ---
 /target/
 client/target/

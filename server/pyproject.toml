@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2",
     "websockets>=12",
+    "nvidia-riva-client>=2.20",
 ]
 
 [build-system]

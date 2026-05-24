@@ -1,0 +1,48 @@
+# Riva ASR NIM の起動 compose。
+#
+# 段階6-2-b で導入。詳細は docs/stage6-readiness.md §2.0 を参照。
+#
+# 重要:
+# - イメージタグは :1.4.0 固定。:1.5.0 / :latest は Blackwell (compute 12.x)
+#   で sortformer (diarizer) の TensorRT エンジンビルドに失敗する既知バグあり
+#   (NVIDIA Developer Forum 363309)。ASR エンコーダ本体は動作する。
+# - NIM_TAGS_SELECTOR="mode=str" で DGX Spark 専用の prebuilt streaming プロファイル
+#   (gpu=dgx_spark, diarizer=disabled, mode=str, vad=default, model_type=prebuilt) が
+#   自動選択される。TensorRT ビルドは走らない。
+# - bind mount 先 ./nim-cache は host で事前 mkdir すること (UID 1000)。
+#   image に /opt/nim/.cache が存在しないため、docker が root 所有で初期化すると
+#   コンテナ内 riva-server (uid 1000) が書けず Permission denied で起動失敗する。
+#
+# 起動手順 (docs/stage6-readiness.md §2.0 とも整合):
+#   docker login nvcr.io                          # 初回または資格情報失効後
+#   export NGC_API_KEY=<key>
+#   mkdir -p server/deploy/nim-cache              # host で UID 1000
+#   docker compose -f server/deploy/riva-nim.compose.yml up -d
+#
+# ready 判定: curl -s localhost:9000/v1/health/ready が {"status":"ready"} を返す
+# (初回はモデル DL で 100 秒前後、prebuilt なので TensorRT ビルドは走らない)。
+
+services:
+  parakeet:
+    image: nvcr.io/nim/nvidia/parakeet-1-1b-rnnt-multilingual:1.4.0
+    container_name: parakeet-asr
+    runtime: nvidia
+    shm_size: "8gb"
+    environment:
+      NIM_TAGS_SELECTOR: "mode=str"
+      NGC_API_KEY: ${NGC_API_KEY:?NGC_API_KEY must be set in host shell}
+      NIM_GRPC_API_PORT: "50051"
+      NIM_HTTP_API_PORT: "9000"
+    ports:
+      - "50051:50051"  # Riva 標準 gRPC
+      - "9000:9000"    # NIM HTTP (/v1/health/ready など)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./nim-cache:/opt/nim/.cache
+    restart: unless-stopped
