@@ -5,6 +5,7 @@ description = "Riva ベースの WebSocket dictation ゲートウェイ"
 requires-python = ">=3.14"
 dependencies = [
     "pydantic>=2",
+    "websockets>=12",
 ]
 
 [build-system]
