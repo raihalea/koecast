@@ -358,32 +358,190 @@ Linux 用 OS 依存追記は**やらない**。
 
 ---
 
-### 2.3 段階6-4: 結合確認 + ドキュメント整備
+### 2.3 段階6-4: Mac で仕上げる (機能改善 + 配布パッケージ化 + ドキュメント)
 
-#### 段階6-4-a: end-to-end 実用テスト + 体感品質チューニング
+段階6-3-f で Mac クライアントのコア体験 (ホットキー → 喋る → overlay 表示 →
+formatted 注入) が動き、設定画面まで揃った。段階6-4 は **Mac で日常運用に耐える
+仕上げ** を行う 4 小段階に分割する。各段階の終わりで止まって承認待ち、承認後に
+commit、その後次の小段階へ、という運用は段階6-3 と同じ。
 
-- 1日中・実用ベースで使ってバグ出し
-- レイテンシ・誤認識・LLM 整形品質・ペースト挙動の最終調整
-- 必要に応じて Riva の `endpointing_config` / `mode=str-thr` 切替、LLM プロンプト
-  調整、overlay 表示戦略
+各小段階の入力となる「6-3 までの申し送り」は本ドキュメント末尾の §5 (申し送り
+台帳) に集約してある。本セクションの各小段階は「§5 のどの宿題を回収するか」を
+明示する。
 
-#### 段階6-4-b: README / 運用手順 / docs/ 更新
+---
 
-- README に Mac/Windows ビルド手順、サーバ起動手順、ホットキー / 設定ファイルの所在
-- `docs/stage6-readiness.md` §6 着手トリガーを全 ☑️ に
-- 段階6 完了マーク
-- 必要なら `docs/operation.md`（日常運用手順）を新設
-- **配布前チェック (段階6-3-d の申し送り)**:
-  - `tauri.conf.json` の `app.macOSPrivateApi: true` と `Cargo.toml` の
-    `tauri` features `"macos-private-api"` は overlay 透過のために有効化している。
-    **Mac App Store に提出する場合は private API 利用が拒否されるため両方外す
-    必要がある**。本格配布の計画が出た段階で対応する (Raiha 個人利用の
-    `.app` 直接配布なら不問)。
-  - `src-tauri/Info.plist` の `NSMicrophoneUsageDescription` が入っていることを
-    確認 (段階6-3-c 申し送り)。
-  - `src-tauri/icons/icon.png` は段階6-3-a 時点で 32×32 透明のプレースホルダ
-    を入れているだけ。配布する `.dmg` を作る前に正規アイコン (ICNS / ICO /
-    各解像度 PNG) に差し替える。
+#### 段階6-4-a: 実用テスト期間 (Raiha が使い込む)
+
+**Claude Code は実装しない**。本小段階は **Raiha が手元 Mac で koecast を 1 日
+ベースで使い込み、問題リストを収集する期間**。Claude Code の役割は以下の 2 つ
+だけ:
+
+1. **入口**: 「実用テストで見てほしい観点のチェックリスト」を `docs/` 配下に
+   新規作成して止まる (Raiha が記録しやすいテンプレート形式)。
+2. **出口**: Raiha が返してきた問題リストを **6-4-b の入力** として受け取り、
+   対策設計に進む。
+
+#### 6-4-a で集める観点 (詳細はチェックリストに切り出す)
+
+- **§5 #1 LLM 整形誤訂正の実例を複数集める**。これは 6-4-b の対策設計の前提
+  であり、最重要。**入力音声・final・formatted・期待した結果** を 1 件ごとに
+  セットで記録する。サンプルが少ないとプロンプト改善の効き目が判断できない。
+  既知の事例: 「ベッドロックでLLMを動かす」→ 「Bedrock EditionでEDを動かす」
+  (段階6-3-c)、「テスト注入」→ 「ティエス ト・ジュニア」(段階6-3-e)。
+- §5 #2 partial 初出の **キリル/英文字ノイズの体感頻度**。仕様上は final で
+  上書きされるが、UI 体感的にどの程度気になるか。suppress するかは体感判定。
+- §5 #4 **レイテンシの体感**。検証時計測 ~2.7s から悪化していないか、Riva
+  endpointing チューニング / `mode=str-thr` への切替を検討するに値するか。
+- **注入の失敗・誤動作**: クリップボード復元漏れ、ペースト先間違い、文字化け、
+  キー競合 (Mac ショートカットや IME)。
+- **overlay の表示挙動**: フォーカス保持、自動 hide のタイミング、位置・サイズ
+  の使い勝手、複数 segment の置換ふるまい。
+- **再接続まわり**: gateway 一時停止 → Reconnecting → Ready 復帰、ネットワーク
+  切断時の挙動。
+- **その他の使用感**: ホットキー押下感覚、設定変更フローの煩雑さ、起動・終了
+  の手間 (cargo run なので Dock からの起動はまだできない)。
+
+#### 完了基準
+- Raiha がチェックリストに沿って 1 日 (もしくは納得できる期間) 使い込み、
+  「6-4-b で潰したい問題リスト」を返してくる。
+- DGX 要否: gateway + parakeet + qwen36-mtp 常用。
+
+---
+
+#### 段階6-4-b: 機能改善 (Mac 完結する範囲)
+
+6-4-a で集まった問題リストを入力に、機能修正を実装する。**Mac で完結する範囲**
+に限る (Windows は段階6-5)。
+
+- **§5 #1 LLM 整形誤訂正対策** (6-4-a の収集事例を起点):
+  - gateway 側 `server/src/dictation_gateway/llm.py` のプロンプト見直し
+  - glossary (`start.context`) のプロンプトへの織り込み方の確認・改善
+  - 温度・top_p 等の生成パラメータ調整
+  - 必要なら few-shot examples の追加
+  - protocol は変更しない (server 内クローズの修正)
+- **§5 #2 partial suppress** (6-4-a の体感判定で「やる」になったら): 最初の
+  数百ms の partial を抑制する or 信頼度フィルタ。client/overlay 側で実装。
+- **§5 #3 設定の即時反映**: 現状「保存後に再起動が必要」。
+  - `server_url` 変更 → ws タスク再接続
+  - `hotkey` 変更 → global-shortcut の unregister/register
+  - `glossary` 変更 → managed state を `Mutex<Config>` 化、次の `start` で読む
+- **§5 #4 Riva endpointing / `mode=str-thr` の切替テスト** (DGX 側): 計画書
+  §4 の打ち手を 6-4-a の体感判定後に試す。
+
+#### 完了基準
+- 6-4-a の問題リストの主要項目が解消、もしくは「次フェーズ送り」を明示。
+- DGX 要否: 修正検証で全要素必要。
+
+---
+
+#### 段階6-4-c: 配布パッケージ化 (Mac)
+
+`cargo run` の素バイナリ運用から、Application フォルダに入れて常用できる
+`.app` 配布形態に移行する。
+
+- **§5 #5 (Mac分) 本物アイコン作成・差し替え**: 32×32 透明 PNG プレースホルダ
+  → ICNS + 各解像度 PNG (16/32/64/128/256/512)。
+- **§5 #6 `.app` バンドル化**: `tauri.conf.json` の `bundle.active = true`、
+  `bundle.macOS` 設定整備、`npm run tauri build` で `.app` 生成、起動確認。
+  署名/notarization は当面省略 (初回起動時の Gatekeeper 手動承認で運用)。
+- **§5 #7 `.app` 後のアクセシビリティ権限再付与**: TCC エントリはバイナリ
+  パス + チェックサム単位なので、`.app` の中身バイナリで再付与が必要。手順を
+  `docs/client-setup.md` に追記。
+- **§5 #8 `macos-private-api` の扱い決定**: Raiha 個人利用 (`.app` 直接配布)
+  なら維持。Mac App Store 提出の予定が出たら除外。本小段階で方針を明文化。
+- **§5 #14 `NSMicrophoneUsageDescription` 確認**: `.app` バンドル後もマイク
+  権限プロンプトが正しく出ることを実機確認。
+
+#### 完了基準
+- `.app` を `~/Applications` に入れて、`cargo run` なしで日常運用できる。
+- DGX 要否: 動作確認に gateway + parakeet + qwen36-mtp。
+
+---
+
+#### 段階6-4-d: 運用ドキュメント整備 + 段階6 完了マーク
+
+- **§5 #11 README 整備**: Mac ビルド/インストール/常用手順、サーバ起動手順、
+  ホットキー、設定ファイル所在。
+- **§5 #12 `docs/operation.md` 新設**: 日常運用 (compose 起動順序、再接続
+  フロー、トラブルシューティング集約)。本ドキュメントには **§5 #9
+  (`hermes-stack_default` 外部依存の復旧手順)** と **§5 #10
+  (qwen36-mtp の `Up (unhealthy)` 表示は実害なし)** を必ず含める。
+- **§5 #13 `docs/stage6-readiness.md` §6 着手トリガーを全 ☑** + 本ドキュメント
+  の 6-4 セクションを「完了」マーク。
+
+#### 完了基準
+- ドキュメントが揃い、Raiha が空いた時間で再セットアップしても README だけで
+  立ち上がる。
+- ここで **段階6 (Mac 仕上げまで) を閉じる**。
+
+---
+
+### 2.4 段階6-5: Windows 展開 (独立フェーズ)
+
+Windows 展開は段階6-4 とは独立した大きさのフェーズなので段階6-5 として分離する。
+段階6-4 を完了して **Mac で日常運用が安定した状態** で着手するのが現実的
+(Mac で出る問題を先に潰してから Windows に展開する方が手戻りが少ない)。
+着手のタイミングは Raiha が決める。
+
+#### 段階6-5-a: Windows 環境セットアップと最小起動
+
+- **§5 #15 (前半)**: `docs/client-setup.md` §3 Placeholder を埋める。
+  Visual Studio Build Tools (C++ workload) + WebView2 Runtime + Rust stable +
+  Node 24 LTS + just のインストール手順、`git clone` / `git pull` の運用。
+- `cd client && npm install && npm run tauri dev` で空ウィンドウ起動 (Mac の
+  6-3-a 相当)。
+- **§5 #17**: 設定ファイル path `%APPDATA%\koecast\config.toml` の動作確認、
+  UAC / SmartScreen 初回バイパス手順。
+
+#### 段階6-5-b: Windows 実機機能検証
+
+- 段階6-3-b 〜 6-3-f 相当の機能が Windows で動くか順に確認 (gateway 接続 →
+  push-to-talk → overlay → 注入 → 設定保存)。
+- **§5 #16 最優先**: `enigo` の `Ctrl+V` 送信が **silent abort しないか検証**。
+  Mac で同類の問題があったので Windows でも疑う。NG なら代替経路を実装:
+  - Rust `windows` crate で `SendInput` 直接呼び
+  - もしくは `nircmd.exe` 等の外部ツール経由
+- もし問題が出たら `inject.rs` の `#[cfg(not(target_os = "macos"))]` ブロックを
+  Windows 専用 cfg に分ける。
+
+#### 段階6-5-c: Windows 配布パッケージ化
+
+- **§5 #5 (Windows分) ICO 作成**: アイコンの Windows 形式。
+- **§5 #15 (後半)**: `npm run tauri build` で `.msi` / `.exe` 生成。
+- SmartScreen 初回バイパス手順を `docs/client-setup.md` Windows 章に追記。
+- 完了基準: `.msi` をインストールして、`cargo run` なしで Windows 常用できる。
+- ここで **段階6-5 (Windows 展開) 完了** = クロスプラットフォーム両対応の
+  koecast 完成。
+
+---
+
+## 5. 申し送り台帳 (6-3 までの申し送りを 6-4/6-5 で回収する一覧)
+
+6-4 と 6-5 の各小段階が回収すべき宿題を 1 表にまとめる。新しい申し送りが
+出たら本表に追記してから次の小段階で扱う。
+
+凡例: 区分 = **機能 (Func)** / **配布 (Dist)** / **ドキュメント (Doc)**。
+
+| # | 宿題 | 出所 | 区分 | 担当 OS | 回収先 |
+|---|---|---|---|---|---|
+| 1 | LLM 整形の誤訂正改善 (実例: ベッドロック→Bedrock Edition, テスト注入→ティエス ト・ジュニア) | 6-3-c, 6-3-e | Func | Mac+DGX | 6-4-a 収集 → 6-4-b 対策 |
+| 2 | partial 初出のキリル/英文字ノイズ suppress 判断 | 6-3-c, 6-3-d | Func | Mac | 6-4-a 体感 → 6-4-b |
+| 3 | 設定の即時反映 (現状は再起動必要) | 6-3-f | Func | Mac | 6-4-b |
+| 4 | Riva endpointing / `mode=str-thr` 切替 | 計画書§4, 6-3-c | Func | Mac体感+DGX | 6-4-a 体感 → 6-4-b |
+| 5 | 本物アイコン (ICNS / ICO / 各解像度 PNG) | 6-3-a, 6-4-b旧 | Dist | Mac+Win | 6-4-c (Mac), 6-5-c (Win) |
+| 6 | `.app` バンドル化 | 6-3-e | Dist | Mac | 6-4-c |
+| 7 | `.app` 後のアクセシビリティ権限再付与手順 | 6-3-e | Dist+Doc | Mac | 6-4-c |
+| 8 | `macos-private-api` の配布時扱い決定 | 6-3-d, 6-4-b旧 | Dist | Mac | 6-4-c |
+| 9 | gateway compose の `hermes-stack_default` 外部依存運用 | 6-2 | Dist+Doc | DGX | 6-4-d (operation.md) |
+| 10 | qwen36-mtp の `Up (unhealthy)` 表示 (実害なし、healthcheck 修正は中長期) | 6-2 | Doc | DGX | 6-4-d (operation.md) |
+| 11 | README 整備 | 6-4-b旧 | Doc | All | 6-4-d |
+| 12 | `docs/operation.md` 新設 | 6-4-b旧 | Doc | DGX+Mac | 6-4-d |
+| 13 | `docs/stage6-readiness.md` §6 着手トリガー ☑ + 段階6 完了マーク | 6-4-b旧 | Doc | — | 6-4-d |
+| 14 | `NSMicrophoneUsageDescription` の `.app` 後動作確認 | 6-3-c | Dist | Mac | 6-4-c |
+| 15 | Windows 環境セットアップ + `.msi`/`.exe` 生成 | 6-3-a | Dist+Doc | Win | 6-5-a (前半) / 6-5-c (後半) |
+| 16 | Windows での enigo `Ctrl+V` silent abort 検証 + 代替経路 | 6-3-e | Func+Dist | Win | 6-5-b |
+| 17 | Windows 用設定ファイル path (`%APPDATA%`) と UAC/SmartScreen | 6-3-a | Dist+Doc | Win | 6-5-a |
 
 ---
 
@@ -401,7 +559,13 @@ Linux 用 OS 依存追記は**やらない**。
 | 6-3-d | 継続 | — |
 | **6-3-e** | 継続 | **★起動**（`formatted` 経路通すため） |
 | 6-3-f | 任意 | 任意 |
-| 6-4-a | 継続（常用） | 継続（常用） |
+| **6-4-a** | 継続（常用） | 継続（常用） |
+| 6-4-b | 継続 | 継続 |
+| 6-4-c | 継続 (.app 動作確認) | 継続 |
+| 6-4-d | — (文書整備) | — |
+| 6-5-a | — (空ウィンドウ起動) | — |
+| 6-5-b | 継続 | 継続 |
+| 6-5-c | 継続 (.msi 動作確認) | 継続 |
 
 手元作業の発生点:
 - **`docker login nvcr.io`**: 6-2-b 開始時に資格情報がキャッシュされていれば
