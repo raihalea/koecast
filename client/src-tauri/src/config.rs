@@ -82,6 +82,36 @@ pub fn load_from_path(path: &Path) -> Result<Config, ConfigError> {
     })
 }
 
+/// 設定を `resolve_config_path()` に書き戻す。親ディレクトリが無ければ作る。
+/// 段階6-3-f の設定画面から呼ぶ。反映は再起動を想定 (in-memory state は更新しない)。
+pub fn save(cfg: &Config) -> Result<PathBuf, ConfigError> {
+    let path = resolve_config_path().ok_or_else(|| ConfigError::Io {
+        path: PathBuf::from("<config dir not found>"),
+        source: std::io::Error::other("dirs::config_dir() returned None"),
+    })?;
+    save_to_path(cfg, &path)?;
+    Ok(path)
+}
+
+pub fn save_to_path(cfg: &Config, path: &Path) -> Result<(), ConfigError> {
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|source| ConfigError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+    }
+    let text = toml::to_string_pretty(cfg).map_err(|e| ConfigError::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::other(format!("toml serialize failed: {e}")),
+    })?;
+    std::fs::write(path, text).map_err(|source| ConfigError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 /// 設定ファイルの絶対 path を返す。環境変数優先、無ければ OS 標準 config dir。
 pub fn resolve_config_path() -> Option<PathBuf> {
     if let Some(env_path) = std::env::var_os("KOECAST_CLIENT_CONFIG") {
@@ -117,6 +147,31 @@ glossary = ["foo", "bar"]
         assert_eq!(c.server_url, "ws://example.test:9000/v1/dictation");
         assert_eq!(c.hotkey, "F12");
         assert_eq!(c.glossary, vec!["foo".to_string(), "bar".to_string()]);
+    }
+
+    #[test]
+    fn save_then_load_roundtrip() {
+        let dir = unique_dir("save_roundtrip");
+        let path = dir.join("c.toml");
+        let cfg = Config {
+            server_url: "ws://saved.test:9000/v1/dictation".into(),
+            hotkey: "Ctrl+F12".into(),
+            glossary: vec!["Bedrock".into(), "GPU".into()],
+        };
+        save_to_path(&cfg, &path).unwrap();
+        let loaded = load_from_path(&path).unwrap();
+        assert_eq!(loaded.server_url, cfg.server_url);
+        assert_eq!(loaded.hotkey, cfg.hotkey);
+        assert_eq!(loaded.glossary, cfg.glossary);
+    }
+
+    #[test]
+    fn save_creates_parent_dir() {
+        let base = unique_dir("save_parent");
+        let path = base.join("nested").join("dir").join("c.toml");
+        let cfg = Config::default();
+        save_to_path(&cfg, &path).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]

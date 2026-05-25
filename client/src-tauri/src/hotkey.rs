@@ -20,6 +20,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracing::{info, warn};
 
 use crate::audio::AudioRecorder;
+use crate::config::Config;
 use crate::overlay;
 use crate::ws::{LatencyTracker, WsHandle};
 
@@ -90,12 +91,21 @@ fn on_pressed<R: Runtime>(app: &AppHandle<R>) {
     }
 
     let ws = app.state::<WsHandle>();
+    // 段階6-3-f: 設定画面で編集した glossary をセッション単位の context として渡す
+    // (仕様 §4.1)。検証フェーズで Riva Word Boosting が ja に効かないと確定したので、
+    // gateway 側でこの context は LLM 整形プロンプトに合流する用途。
+    let cfg = app.state::<Config>();
+    let context = if cfg.glossary.is_empty() {
+        None
+    } else {
+        Some(cfg.glossary.clone())
+    };
     let start_msg = StartMessage {
         protocol_version: 1,
         audio: None,
         language: None,
         enable_formatting: None,
-        context: None,
+        context,
     };
     ws.send_start(start_msg);
 

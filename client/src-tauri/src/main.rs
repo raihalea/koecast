@@ -16,6 +16,16 @@ fn get_status(state: tauri::State<'_, ws::SharedStatus>) -> ws::ConnectionStatus
     state.lock().unwrap().clone()
 }
 
+/// 段階6-3-f: 設定画面から呼ばれる。書き戻したファイルの絶対パス文字列を返す
+/// (UI 表示用)。エラーは String 化してフロントに返す。in-memory の Config state は
+/// 更新しないので、変更を効かせるにはアプリ再起動が必要 (UI で案内)。
+#[tauri::command]
+fn save_config(cfg: config::Config) -> Result<String, String> {
+    config::save(&cfg)
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -62,7 +72,7 @@ fn main() {
         .manage(ws::SharedStatus::new(ws::ConnectionStatus::Idle))
         .manage(ws::LatencyTracker::new(None))
         .manage(overlay::OverlayState::new(None))
-        .invoke_handler(tauri::generate_handler![get_config, get_status])
+        .invoke_handler(tauri::generate_handler![get_config, get_status, save_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

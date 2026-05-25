@@ -217,11 +217,12 @@ async fn connect_and_serve(
             cmd = cmd_rx.recv() => {
                 match cmd {
                     Some(WsCommand::SendStart(m)) => {
+                        let ctx_len = m.context.as_ref().map(|v| v.len()).unwrap_or(0);
                         let msg = ClientMessage::Start(m);
                         if let Err(e) = send_client_message(&mut stream, &msg).await {
                             break format!("send start failed: {e}");
                         }
-                        debug!("sent start");
+                        debug!(glossary_terms = ctx_len, "sent start");
                     }
                     Some(WsCommand::SendStop) => {
                         let msg = ClientMessage::Stop(StopMessage {});
