@@ -17,13 +17,15 @@ server:
 client:
     @echo "TODO(stage-3+): cd client && npm run tauri dev"
 
-# server / client / 契約テストを通す
-# 段階6-1 で client/ を Cargo workspace 化し、protocol クレートを src-tauri から
-# 切り出した。契約テストは client/protocol/tests/ に移動。Tauri OS 依存とは無関係に
-# `cargo test --workspace` で完結する。
-test:
+# server + 共有 protocol の契約テストを通す
+# 段階6-3 以降の Tauri アプリ本体 (client/src-tauri/) は Mac/Windows 実機で
+# ビルド・実行するため、DGX (Linux) の devenv shell からはテストに含めない。
+# (詳細は docs/stage6-implementation-plan.md §1.5)
+# `test-shared` という名前は「server + protocol の共有契約部分だけが対象であり、
+# Tauri クライアント本体は含まれない」を明示するため。
+test-shared:
     cd server && uv run pytest
-    cd client && cargo test --workspace --tests
+    cd client && cargo test -p koecast-protocol --tests
 
 # lint (全言語)
 lint:
