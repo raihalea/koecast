@@ -28,3 +28,8 @@ dirs = "5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
+
+# 段階6-3-c: マイク取得 + リサンプリング + global hotkey
+cpal = "0.17"
+rubato = "0.16"  # 3.x は async API 中心の刷新でリアルタイム入力には 0.16 系が扱いやすい
+tauri-plugin-global-shortcut = "2"

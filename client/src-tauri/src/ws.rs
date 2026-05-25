@@ -1,4 +1,4 @@
-//! gateway への WebSocket クライアント (段階6-3-b)。
+//! gateway への WebSocket クライアント (段階6-3-b で接続維持、段階6-3-c で送信追加)。
 //!
 //! 責務:
 //! - `config.server_url` への WebSocket 接続を維持する long-lived タスクを spawn する。
@@ -7,18 +7,22 @@
 //! - 切断 / 接続失敗 / `recoverable: false` の `error` 受信時は、
 //!   1s, 2s, 4s, 8s, 16s, 30s, 30s, ... の指数バックオフで再接続する (仕様 §8)。
 //! - 接続状態の変化はすべて Tauri イベント `connection-status` で UI に通知する。
+//! - 外部 (audio.rs / hotkey.rs) からの送信要求は [`WsHandle`] 経由の mpsc で受け取り、
+//!   接続中の WebSocket Stream に流す。接続前/再接続中の要求はバッファせず捨てる
+//!   (録音は接続が ready のときだけ意味があるので、handle 側で接続状態を見てから
+//!   呼ぶこと)。
 //!
-//! 段階6-3-b では `start` / 音声フレーム / `stop` を**送らない**。
-//! `partial` / `final` / `formatted` は受信できるがログに残すだけで UI には流さない。
-//! それらは 6-3-c (音声) / 6-3-d (overlay) / 6-3-e (注入) で扱う。
+//! 6-3-c で送信するのは `start` (Text) / 音声 (Binary, PCM16 LE) / `stop` (Text) の3種類。
+//! `partial` / `final` / `formatted` は受信できるがログに残すだけ (UI 反映は 6-3-d 以降)。
 
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
-use koecast_protocol::ServerMessage;
+use koecast_protocol::{ClientMessage, ServerMessage, StartMessage, StopMessage};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, info, warn};
 
@@ -26,6 +30,10 @@ use tracing::{debug, info, warn};
 /// フロントの listener 登録が emit に間に合わず初回状態を取りこぼす問題を
 /// `get_status` Tauri command で取り戻すために保持する。
 pub type SharedStatus = Mutex<ConnectionStatus>;
+
+/// ホットキー押下からの最初の partial 受信までを計測するための保管庫。
+/// 段階6-3-c の「first partial レイテンシ再測定」(計画書 §4) に使う。
+pub type LatencyTracker = Mutex<Option<Instant>>;
 
 /// 期待する protocol_version (仕様 §9)。
 const EXPECTED_PROTOCOL_VERSION: i64 = 1;
@@ -42,28 +50,20 @@ fn backoff_secs(attempt: u32) -> u64 {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum ConnectionStatus {
-    /// 起動直後 / まだ何もしていない。
     Idle,
-    /// TCP/WS ハンドシェイク中。
     Connecting { url: String },
-    /// `ready` 受信完了。送受信可能 (本段階では受信のみ)。
     Ready { url: String, server: String },
-    /// 切断後の待機中。
     Reconnecting {
         url: String,
         attempt: u32,
         wait_secs: u64,
         reason: String,
     },
-    /// `protocol_version` 不一致など、リトライしても直らないと判明した状態。
-    /// 設定を見直すまで再接続しない。
     Fatal { url: String, reason: String },
 }
 
 const EVENT: &str = "connection-status";
 
-/// Tauri managed state を更新したうえで `connection-status` イベントを emit する。
-/// listener 登録が間に合わない初回 emit を取りこぼすため、state にも書く。
 fn emit(app: &AppHandle, status: &ConnectionStatus) {
     if let Some(state) = app.try_state::<SharedStatus>() {
         if let Ok(mut s) = state.lock() {
@@ -76,27 +76,62 @@ fn emit(app: &AppHandle, status: &ConnectionStatus) {
     debug!(?status, "connection status changed");
 }
 
-/// WebSocket クライアントを Tauri の async runtime 上に spawn する。
-pub fn spawn(app: AppHandle, url: String) {
-    tauri::async_runtime::spawn(async move {
-        run(app, url).await;
-    });
+// --- 外部 (audio / hotkey) からの送信要求チャネル -------------------------------
+
+/// ws タスクへ送る要求コマンド。
+pub enum WsCommand {
+    /// セッション開始。仕様 §4.1 の `start` メッセージを送信する。
+    SendStart(StartMessage),
+    /// セッション終了。仕様 §4.3 の `stop` メッセージを送信する。
+    SendStop,
+    /// 音声フレーム (生 PCM16 LE)。Binary フレームで送信する。
+    SendAudio(Vec<u8>),
 }
 
-async fn run(app: AppHandle, url: String) {
+/// 外部から ws タスクへ command を投げ込むハンドル。
+/// `Clone` 可能で、複数モジュールに配ってよい (mpsc::UnboundedSender が cheap clone)。
+#[derive(Clone)]
+pub struct WsHandle {
+    tx: mpsc::UnboundedSender<WsCommand>,
+}
+
+impl WsHandle {
+    pub fn send_start(&self, msg: StartMessage) {
+        if let Err(e) = self.tx.send(WsCommand::SendStart(msg)) {
+            warn!(?e, "ws cmd_tx send_start failed (ws task dropped?)");
+        }
+    }
+
+    pub fn send_stop(&self) {
+        if let Err(e) = self.tx.send(WsCommand::SendStop) {
+            warn!(?e, "ws cmd_tx send_stop failed (ws task dropped?)");
+        }
+    }
+
+    pub fn send_audio(&self, chunk: Vec<u8>) {
+        // audio chunk は秒間 10 個ペースで流れるのでログを詰まらせない。
+        let _ = self.tx.send(WsCommand::SendAudio(chunk));
+    }
+}
+
+/// WebSocket クライアントを Tauri の async runtime 上に spawn し、外部から命令を
+/// 投げ込む [`WsHandle`] を返す。
+pub fn spawn(app: AppHandle, url: String) -> WsHandle {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let handle = WsHandle { tx };
+    tauri::async_runtime::spawn(run(app, url, rx));
+    handle
+}
+
+async fn run(app: AppHandle, url: String, mut cmd_rx: mpsc::UnboundedReceiver<WsCommand>) {
     let mut attempt: u32 = 0;
 
     loop {
         attempt += 1;
 
-        emit(
-            &app,
-            &ConnectionStatus::Connecting {
-                url: url.clone(),
-            },
-        );
+        emit(&app, &ConnectionStatus::Connecting { url: url.clone() });
 
-        match connect_and_serve(&app, &url).await {
+        match connect_and_serve(&app, &url, &mut cmd_rx).await {
             ConnectionOutcome::Closed(reason) => {
                 let wait = backoff_secs(attempt);
                 warn!(reason, attempt, wait, "WS closed; will reconnect");
@@ -112,7 +147,6 @@ async fn run(app: AppHandle, url: String) {
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
             ConnectionOutcome::ReadyOk => {
-                // ready まで到達できた接続が切断 → attempt をリセットして再接続
                 attempt = 0;
                 let wait = backoff_secs(1);
                 emit(
@@ -142,15 +176,16 @@ async fn run(app: AppHandle, url: String) {
 }
 
 enum ConnectionOutcome {
-    /// ready に到達せず切断 (接続失敗 / 直後の切断 / 初メッセージが ready でない 等)。
     Closed(String),
-    /// ready 到達後に切断。
     ReadyOk,
-    /// プロトコルレベルで継続不可 (UNSUPPORTED_VERSION 等)。
     Fatal(String),
 }
 
-async fn connect_and_serve(app: &AppHandle, url: &str) -> ConnectionOutcome {
+async fn connect_and_serve(
+    app: &AppHandle,
+    url: &str,
+    cmd_rx: &mut mpsc::UnboundedReceiver<WsCommand>,
+) -> ConnectionOutcome {
     let (mut stream, _resp) = match tokio_tungstenite::connect_async(url).await {
         Ok(v) => v,
         Err(e) => return ConnectionOutcome::Closed(format!("connect_async failed: {e}")),
@@ -172,31 +207,73 @@ async fn connect_and_serve(app: &AppHandle, url: &str) -> ConnectionOutcome {
         },
     );
 
-    // ready 後の受信ループ。本段階では partial/final/formatted/session_end/error を
-    // ログに流すだけ (UI への反映は 6-3-d 以降)。
+    // ready 前に詰まったコマンドは破棄。録音は ready 中にしか意味がない。
+    while cmd_rx.try_recv().is_ok() {}
+
     let reason = loop {
-        match stream.next().await {
-            Some(Ok(Message::Text(text))) => handle_server_text(text.as_ref()),
-            Some(Ok(Message::Binary(_))) => debug!("ignored unexpected Binary frame from server"),
-            Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
-                // tokio-tungstenite が ping に自動で pong を返す。何もしない。
+        tokio::select! {
+            biased;
+            // 外部からの送信要求
+            cmd = cmd_rx.recv() => {
+                match cmd {
+                    Some(WsCommand::SendStart(m)) => {
+                        let msg = ClientMessage::Start(m);
+                        if let Err(e) = send_client_message(&mut stream, &msg).await {
+                            break format!("send start failed: {e}");
+                        }
+                        debug!("sent start");
+                    }
+                    Some(WsCommand::SendStop) => {
+                        let msg = ClientMessage::Stop(StopMessage {});
+                        if let Err(e) = send_client_message(&mut stream, &msg).await {
+                            break format!("send stop failed: {e}");
+                        }
+                        debug!("sent stop");
+                    }
+                    Some(WsCommand::SendAudio(chunk)) => {
+                        if let Err(e) = stream.send(Message::Binary(chunk.into())).await {
+                            break format!("send audio failed: {e}");
+                        }
+                    }
+                    None => {
+                        // 全 WsHandle が drop。process 終了系。
+                        break "cmd channel closed".to_string();
+                    }
+                }
             }
-            Some(Ok(Message::Close(frame))) => {
-                let r = frame
-                    .map(|f| format!("close: code={}, reason={}", f.code, f.reason))
-                    .unwrap_or_else(|| "close (no frame)".to_string());
-                let _ = stream.send(Message::Close(None)).await;
-                break r;
+            // サーバからの受信
+            frame = stream.next() => {
+                match frame {
+                    Some(Ok(Message::Text(text))) => handle_server_text(app, text.as_ref()),
+                    Some(Ok(Message::Binary(_))) => debug!("ignored unexpected Binary frame from server"),
+                    Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {}
+                    Some(Ok(Message::Close(frame))) => {
+                        let r = frame
+                            .map(|f| format!("close: code={}, reason={}", f.code, f.reason))
+                            .unwrap_or_else(|| "close (no frame)".to_string());
+                        let _ = stream.send(Message::Close(None)).await;
+                        break r;
+                    }
+                    Some(Ok(Message::Frame(_))) => {}
+                    Some(Err(e)) => break format!("recv error: {e}"),
+                    None => break "stream ended".to_string(),
+                }
             }
-            Some(Ok(Message::Frame(_))) => {
-                // raw frame は実用上届かない。無視。
-            }
-            Some(Err(e)) => break format!("recv error: {e}"),
-            None => break "stream ended".to_string(),
         }
     };
     info!(reason, "post-ready disconnect");
     ConnectionOutcome::ReadyOk
+}
+
+async fn send_client_message<S>(
+    stream: &mut S,
+    msg: &ClientMessage,
+) -> Result<(), tokio_tungstenite::tungstenite::Error>
+where
+    S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
+    let text = serde_json::to_string(msg).expect("ClientMessage serializes");
+    stream.send(Message::Text(text.into())).await
 }
 
 enum ReadyError {
@@ -204,7 +281,6 @@ enum ReadyError {
     Fatal(String),
 }
 
-/// 接続直後の最初のメッセージが ServerMessage::Ready であることを確認する。
 async fn wait_for_ready<S>(stream: &mut S) -> Result<String, ReadyError>
 where
     S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
@@ -225,8 +301,6 @@ where
         Message::Close(_) => {
             return Err(ReadyError::Closed("server closed before ready".to_string()))
         }
-        // ping/pong/Frame は通常 ready の前には来ないが、来たら再受信を回す
-        // …とすべきだがシンプルさのため切断扱いにする。Tailscale 越しでも実害なし。
         other => {
             return Err(ReadyError::Closed(format!(
                 "unexpected first frame: {other:?}"
@@ -260,10 +334,28 @@ where
     }
 }
 
-/// ready 後に届くサーバ → クライアントメッセージのログ出力 (6-3-b は受信のみ)。
-fn handle_server_text(text: &str) {
+/// ready 後に届くサーバ → クライアントメッセージのログ出力 + レイテンシ計測。
+fn handle_server_text(app: &AppHandle, text: &str) {
     match serde_json::from_str::<ServerMessage>(text) {
-        Ok(ServerMessage::Partial(p)) => debug!(seg = p.segment_id, text = %p.text, "partial"),
+        Ok(ServerMessage::Partial(p)) => {
+            // first partial レイテンシ計測: LatencyTracker に押下時刻が入っていれば
+            // 一度だけ diff を出力する (計画書 §4)
+            if let Some(state) = app.try_state::<LatencyTracker>() {
+                if let Ok(mut t) = state.lock() {
+                    if let Some(started) = t.take() {
+                        let ms = started.elapsed().as_millis();
+                        info!(
+                            seg = p.segment_id,
+                            text = %p.text,
+                            latency_ms = ms,
+                            "★ first partial latency"
+                        );
+                        return;
+                    }
+                }
+            }
+            debug!(seg = p.segment_id, text = %p.text, "partial");
+        }
         Ok(ServerMessage::Final(f)) => info!(seg = f.segment_id, text = %f.text, "final"),
         Ok(ServerMessage::Formatted(f)) => {
             info!(seg = f.segment_id, fallback = f.fallback, text = %f.text, "formatted")
@@ -273,7 +365,6 @@ fn handle_server_text(text: &str) {
             warn!(?e.code, msg = %e.message, recoverable = e.recoverable, "server error")
         }
         Ok(ServerMessage::Ready(_)) => {
-            // ready 後に再度 ready が来るのは仕様外。ログだけ残す。
             warn!("unexpected duplicate ready after initial ready");
         }
         Err(e) => warn!(?e, raw = %text, "failed to parse server text"),

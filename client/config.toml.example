@@ -14,8 +14,11 @@
 # 例: "ws://gx10-xxxx.tail-xxxxxx.ts.net:8000/v1/dictation"
 server_url = "ws://<dgx-tailscale-name>:8000/v1/dictation"
 
-# global-hotkey 形式のプッシュトゥトーク記述。段階6-3-c で実用。
-hotkey = "CmdOrCtrl+Alt+Space"
+# global-hotkey 形式のプッシュトゥトーク記述。段階6-3-c 動作確認で実機検証済み。
+# 注意: `CmdOrCtrl+Alt+Space` (= Cmd+Option+Space) は macOS の Finder
+# 「Spotlight 検索ウィンドウ」と衝突して捕捉できなかった。
+# Mac/Win 共通で衝突が少ない `Ctrl+Shift+Space` を初期値にしている。
+hotkey = "Ctrl+Shift+Space"
 
 # セッション単位の Word Boosting 候補語。常用辞書はサーバ側持ち。
 # 検証フェーズで Riva 側 Word Boosting は ja に効かないと確定済みなので、
