@@ -85,6 +85,19 @@ GUI / マイク / global-hotkey / 別アプリへの inject は本質的に GUI 
 - Claude Code を引き続き DGX 上で動かすか、手元 Mac/Windows に移すかも Raiha が
   決める (DGX 側で実装 → git pull で手元実機に持っていく運用が標準)。
 
+**Windows 着手時の留意点 (段階6-3-e の Mac 検証で判明したもの)**:
+
+- 段階6-3-e で **Mac は `enigo` 経由の `Cmd+V` 送信中にアプリが silent abort**
+  したため、macOS だけ `osascript` 経由 (System Events への AppleScript
+  keystroke) に切り替えてある (`client/src-tauri/src/inject.rs` の
+  `#[cfg(target_os = "macos")]` 分岐)。
+- **Windows 版は `enigo` のまま** (`#[cfg(not(target_os = "macos"))]`)。Windows
+  実機検証時は **enigo の `Ctrl+V` 送信が同じ問題 (silent abort) を起こさないか
+  必ず確認**すること。再現するなら Windows 用の代替経路 (例: WinAPI 直接で
+  `SendInput`, or `nircmd` 等の外部ツール経由) を用意する。
+- 上記が確定したら、本ドキュメントと `docs/client-setup.md` (Windows 章) を
+  更新する。
+
 ---
 
 ## 2. 小段階の分割

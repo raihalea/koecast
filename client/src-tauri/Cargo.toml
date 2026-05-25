@@ -33,3 +33,7 @@ thiserror = "2"
 cpal = "0.17"
 rubato = "0.16"  # 3.x は async API 中心の刷新でリアルタイム入力には 0.16 系が扱いやすい
 tauri-plugin-global-shortcut = "2"
+
+# 段階6-3-e: クリップボード退避 → ペースト (Cmd+V) → 復元
+arboard = "3"
+enigo = "0.6"

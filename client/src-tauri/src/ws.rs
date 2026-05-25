@@ -382,6 +382,10 @@ fn handle_server_text(app: &AppHandle, text: &str) {
         Ok(ServerMessage::Formatted(f)) => {
             emit_segment(app, "formatted", f.segment_id, &f.text);
             info!(seg = f.segment_id, fallback = f.fallback, text = %f.text, "formatted");
+            // 段階6-3-e: formatted のみアクティブウィンドウへ注入する。
+            // fallback=true (LLM 失敗で final 原文) でも入力を失わないため注入する
+            // (仕様 §5.4)。partial / final は overlay 表示のみ。
+            crate::inject::paste(f.text);
         }
         Ok(ServerMessage::SessionEnd(s)) => {
             if let Err(e) = app.emit("segment-end", serde_json::json!({})) {
