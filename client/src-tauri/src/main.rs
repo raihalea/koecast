@@ -3,8 +3,13 @@
 use std::sync::Arc;
 
 use koecast_client::{audio, config, hotkey, overlay, ws};
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, WindowEvent};
 use tracing_subscriber::EnvFilter;
+
+const MAIN_WINDOW: &str = "main";
+const TRAY_ID: &str = "main-tray";
 
 #[tauri::command]
 fn get_config(state: tauri::State<'_, config::Config>) -> config::Config {
@@ -16,9 +21,6 @@ fn get_status(state: tauri::State<'_, ws::SharedStatus>) -> ws::ConnectionStatus
     state.lock().unwrap().clone()
 }
 
-/// 段階6-3-f: 設定画面から呼ばれる。書き戻したファイルの絶対パス文字列を返す
-/// (UI 表示用)。エラーは String 化してフロントに返す。in-memory の Config state は
-/// 更新しないので、変更を効かせるにはアプリ再起動が必要 (UI で案内)。
 #[tauri::command]
 fn save_config(cfg: config::Config) -> Result<String, String> {
     config::save(&cfg)
@@ -53,6 +55,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(hotkey::build_plugin())
         .setup(move |app| {
+            // 段階6-4-a-i: Mac で Dock にアイコンを出さない accessory アプリにする。
+            // メニューバー (tray) からのみ操作する常駐アプリの形態。
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // ws タスク (受信 + 送信ハンドル取得)
             let ws_handle = ws::spawn(app.handle().clone(), cfg_for_setup.server_url.clone());
 
@@ -65,6 +72,50 @@ fn main() {
 
             // shortcut を OS に register (handler は plugin 側で hook 済み)
             hotkey::register(&app.handle().clone());
+
+            // main window の close を「終了」ではなく「hide」に差し替える。
+            // トレイメニューの「終了」だけで明示的に exit させる設計。
+            if let Some(main_window) = app.get_webview_window(MAIN_WINDOW) {
+                let win_for_close = main_window.clone();
+                main_window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_for_close.hide();
+                    }
+                });
+            }
+
+            // メニューバー常駐 (tray icon + menu)
+            let show_item =
+                MenuItem::with_id(app, "show_settings", "設定を開く", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let _tray = TrayIconBuilder::with_id(TRAY_ID)
+                .icon(tauri::include_image!("icons/tray.png"))
+                .icon_as_template(true) // Mac のメニューバー流儀: テンプレート画像 (アルファのみ使用)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show_settings" => show_main_window(app),
+                    "quit" => {
+                        tracing::info!("quit from tray menu");
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_main_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
             Ok(())
         })
         .manage(cfg)
@@ -75,4 +126,25 @@ fn main() {
         .invoke_handler(tauri::generate_handler![get_config, get_status, save_config])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(w) = app.get_webview_window(MAIN_WINDOW) {
+        match w.is_visible() {
+            Ok(true) => {
+                let _ = w.hide();
+            }
+            _ => {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
+    }
 }
