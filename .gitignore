@@ -38,6 +38,13 @@ npm-debug.log*
 # --- Vite ---
 client/dist/
 
+# --- koecast クライアント設定 ---
+# 実体はユーザー環境固有 (Tailscale 名・ホットキー等)。
+# リポジトリには client/config.toml.example のみコミットし、実体はコピーして使う。
+# 通常は OS 標準 config dir (Mac: ~/Library/Application Support/koecast/) に置くので
+# リポジトリ内には来ないが、保険として除外。
+client/config.toml
+
 # --- editors / OS ---
 .DS_Store
 .idea/

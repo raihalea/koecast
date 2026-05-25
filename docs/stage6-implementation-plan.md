@@ -372,7 +372,7 @@ Linux 用 OS 依存追記は**やらない**。
 | **6-2-c** | 継続 | **★起動**（既存 compose 経由） |
 | 6-2-d | 継続 | 継続 |
 | 6-3-a | — | — |
-| 6-3-b | — (サーバさえ立っていれば良い) | — |
+| 6-3-b | **必須** (gateway compose が `depends_on: parakeet (service_healthy)` で Riva ready を待つため、gateway 単体起動はできない) | — |
 | **6-3-c** | **★起動**（リアルタイム ASR 観測） | — |
 | 6-3-d | 継続 | — |
 | **6-3-e** | 継続 | **★起動**（`formatted` 経路通すため） |

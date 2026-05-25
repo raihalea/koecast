@@ -1,0 +1,23 @@
+# koecast クライアント設定テンプレート。
+#
+# このファイルをコピーして使う (Mac):
+#
+#   mkdir -p "$HOME/Library/Application Support/koecast"
+#   cp client/config.toml.example "$HOME/Library/Application Support/koecast/config.toml"
+#
+# その後、自分の環境に合わせて値を書き換える。実体ファイル (config.toml) は
+# git 管理外。本テンプレートのみリポジトリに置く。
+#
+# 環境変数 KOECAST_CLIENT_CONFIG=<path> を指定すると、その path を優先して読む。
+
+# gateway の WebSocket URL。Tailscale MagicDNS 名 + port + path で組み立てる。
+# 例: "ws://gx10-xxxx.tail-xxxxxx.ts.net:8000/v1/dictation"
+server_url = "ws://<dgx-tailscale-name>:8000/v1/dictation"
+
+# global-hotkey 形式のプッシュトゥトーク記述。段階6-3-c で実用。
+hotkey = "CmdOrCtrl+Alt+Space"
+
+# セッション単位の Word Boosting 候補語。常用辞書はサーバ側持ち。
+# 検証フェーズで Riva 側 Word Boosting は ja に効かないと確定済みなので、
+# 実質は段階6-2-c の LLM 整形プロンプトに合流する用語ヒント。
+glossary = []
