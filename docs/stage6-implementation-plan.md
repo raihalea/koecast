@@ -360,6 +360,17 @@ Linux 用 OS 依存追記は**やらない**。
 - `docs/stage6-readiness.md` §6 着手トリガーを全 ☑️ に
 - 段階6 完了マーク
 - 必要なら `docs/operation.md`（日常運用手順）を新設
+- **配布前チェック (段階6-3-d の申し送り)**:
+  - `tauri.conf.json` の `app.macOSPrivateApi: true` と `Cargo.toml` の
+    `tauri` features `"macos-private-api"` は overlay 透過のために有効化している。
+    **Mac App Store に提出する場合は private API 利用が拒否されるため両方外す
+    必要がある**。本格配布の計画が出た段階で対応する (Raiha 個人利用の
+    `.app` 直接配布なら不問)。
+  - `src-tauri/Info.plist` の `NSMicrophoneUsageDescription` が入っていることを
+    確認 (段階6-3-c 申し送り)。
+  - `src-tauri/icons/icon.png` は段階6-3-a 時点で 32×32 透明のプレースホルダ
+    を入れているだけ。配布する `.dmg` を作る前に正規アイコン (ICNS / ICO /
+    各解像度 PNG) に差し替える。
 
 ---
 

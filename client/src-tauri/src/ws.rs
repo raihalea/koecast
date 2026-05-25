@@ -334,12 +334,31 @@ where
     }
 }
 
-/// ready 後に届くサーバ → クライアントメッセージのログ出力 + レイテンシ計測。
+/// 6-3-d: overlay ウィンドウ向けに 1 セグメント分の更新を送る。
+/// kind = "partial" / "final" / "formatted"。Svelte 側は同一 segment_id の
+/// partial が来たら前を**置換**する (仕様 §5.2)。
+///
+/// グローバル `emit` を使う (main window は segment-update を listen していない)。
+/// `emit_to(label, ...)` の `From<&str> for EventTarget` 解釈で別 webview に届かない
+/// ケースがあったため、シンプルに全 listener に流す方式に切り替えた。
+fn emit_segment(app: &AppHandle, kind: &str, segment_id: i64, text: &str) {
+    let payload = serde_json::json!({
+        "kind": kind,
+        "segment_id": segment_id,
+        "text": text,
+    });
+    if let Err(e) = app.emit("segment-update", payload) {
+        warn!(?e, "emit segment-update failed");
+    }
+}
+
+/// ready 後に届くサーバ → クライアントメッセージのログ出力 + レイテンシ計測
+/// + overlay 向け emit (6-3-d)。
 fn handle_server_text(app: &AppHandle, text: &str) {
     match serde_json::from_str::<ServerMessage>(text) {
         Ok(ServerMessage::Partial(p)) => {
-            // first partial レイテンシ計測: LatencyTracker に押下時刻が入っていれば
-            // 一度だけ diff を出力する (計画書 §4)
+            emit_segment(app, "partial", p.segment_id, &p.text);
+            // first partial レイテンシ計測 (計画書 §4)
             if let Some(state) = app.try_state::<LatencyTracker>() {
                 if let Ok(mut t) = state.lock() {
                     if let Some(started) = t.take() {
@@ -356,11 +375,21 @@ fn handle_server_text(app: &AppHandle, text: &str) {
             }
             debug!(seg = p.segment_id, text = %p.text, "partial");
         }
-        Ok(ServerMessage::Final(f)) => info!(seg = f.segment_id, text = %f.text, "final"),
-        Ok(ServerMessage::Formatted(f)) => {
-            info!(seg = f.segment_id, fallback = f.fallback, text = %f.text, "formatted")
+        Ok(ServerMessage::Final(f)) => {
+            emit_segment(app, "final", f.segment_id, &f.text);
+            info!(seg = f.segment_id, text = %f.text, "final");
         }
-        Ok(ServerMessage::SessionEnd(s)) => info!(segments = s.segments, "session_end"),
+        Ok(ServerMessage::Formatted(f)) => {
+            emit_segment(app, "formatted", f.segment_id, &f.text);
+            info!(seg = f.segment_id, fallback = f.fallback, text = %f.text, "formatted");
+        }
+        Ok(ServerMessage::SessionEnd(s)) => {
+            if let Err(e) = app.emit("segment-end", serde_json::json!({})) {
+                warn!(?e, "emit segment-end failed");
+            }
+            crate::overlay::schedule_hide(app, 3);
+            info!(segments = s.segments, "session_end");
+        }
         Ok(ServerMessage::Error(e)) => {
             warn!(?e.code, msg = %e.message, recoverable = e.recoverable, "server error")
         }

@@ -16,11 +16,28 @@
         "title": "koecast",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "overlay",
+        "url": "overlay.html",
+        "decorations": false,
+        "alwaysOnTop": true,
+        "focus": false,
+        "transparent": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": false,
+        "width": 520,
+        "height": 96,
+        "x": 100,
+        "y": 60
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": false,

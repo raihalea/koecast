@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "段階6-3-a で空ウィンドウ起動、段階6-3-c で global hotkey を追加。",
-  "windows": ["main"],
+  "windows": ["main", "overlay"],
   "permissions": ["core:default", "global-shortcut:default"]
 }

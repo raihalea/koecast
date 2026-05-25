@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use koecast_client::{audio, config, hotkey, ws};
+use koecast_client::{audio, config, hotkey, overlay, ws};
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
@@ -61,6 +61,7 @@ fn main() {
         .manage(hotkey_config)
         .manage(ws::SharedStatus::new(ws::ConnectionStatus::Idle))
         .manage(ws::LatencyTracker::new(None))
+        .manage(overlay::OverlayState::new(None))
         .invoke_handler(tauri::generate_handler![get_config, get_status])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,7 +14,7 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 koecast-protocol = { path = "../protocol" }
 
 # 段階6-3-b: WebSocket クライアント + 設定読み込み + 接続状態通知

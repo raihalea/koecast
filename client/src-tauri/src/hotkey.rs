@@ -15,11 +15,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use koecast_protocol::StartMessage;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tracing::{info, warn};
 
 use crate::audio::AudioRecorder;
+use crate::overlay;
 use crate::ws::{LatencyTracker, WsHandle};
 
 /// Tauri State として manage されるホットキー設定。設定が無効 (parse 失敗) なら
@@ -82,6 +83,12 @@ fn on_pressed<R: Runtime>(app: &AppHandle<R>) {
         }
     }
 
+    // overlay 表示 + 録音中インジケータ ON (グローバル emit)
+    overlay::show(app);
+    if let Err(e) = app.emit("recording-status", serde_json::json!({ "active": true })) {
+        warn!(?e, "emit recording-status on failed");
+    }
+
     let ws = app.state::<WsHandle>();
     let start_msg = StartMessage {
         protocol_version: 1,
@@ -109,5 +116,11 @@ fn on_released<R: Runtime>(app: &AppHandle<R>) {
         if let Ok(mut t) = state.lock() {
             *t = None;
         }
+    }
+
+    // 録音中インジケータ OFF。overlay 自体は session_end 後の自動 hide に任せる
+    // (final/formatted を見える時間を確保するため、即 hide はしない)
+    if let Err(e) = app.emit("recording-status", serde_json::json!({ "active": false })) {
+        warn!(?e, "emit recording-status off failed");
     }
 }
