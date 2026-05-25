@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "段階6-3-a の空ウィンドウ起動に必要な最小 capability。実装本体 (6-3-b 以降) で機能追加に応じて permissions を拡張する。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

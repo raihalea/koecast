@@ -5,19 +5,14 @@ description = "koecast dictation client (Tauri)"
 edition = "2021"
 rust-version = "1.77"
 
-# NOTE: tauri / tauri-build は段階5 で外したまま、段階6 でも本ファイル内では
-# まだ復活させない。実装本体 (ws.rs / audio.rs / hotkey.rs / inject.rs /
-# overlay.rs / main.rs) に着手するタイミングで以下を追加する:
-#   [build-dependencies]
-#   tauri-build = { version = "2", features = [] }
-#   [dependencies]
-#   tauri = { version = "2", features = [] }
-# このときに devenv.nix に Tauri OS 依存 (WebKitGTK / libsoup / dbus 等) を追記
-# する (monorepo-design.md §10 / docs/stage6-readiness.md §3.3)。
-#
-# protocol 型は別クレート koecast-protocol に切り出した (段階6-1)。
-# 契約テストはそちらに移動し、本クレートは Tauri OS 依存を一切引かない契約テスト
-# 経路を持たないことになる (docs/stage6-readiness.md §5)。
+# protocol 型は別クレート koecast-protocol に切り出し済み (段階6-1)。
+# 契約テストはそちらにあり、本クレートは Tauri OS 依存を巻き込んだ状態の
+# まま OK。just test-shared は -p koecast-protocol で本クレートを除外して回す
+# (docs/stage6-implementation-plan.md §1.4)。
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tauri = { version = "2", features = [] }
 koecast-protocol = { path = "../protocol" }
