@@ -13,9 +13,11 @@ codegen:
 server:
     @echo "TODO(stage-3+): cd server && uv run python -m dictation_gateway"
 
-# client を Tauri dev で起動
+# client を Tauri dev で起動 (メニューバー常駐モード)
+# 配布版 (.app) は段階6-4-c で対応予定。それまでは cargo run ベース。
+# 必要環境 (Mac): Rust toolchain (rustup) + Node 24 + Xcode CLT。
 client:
-    @echo "TODO(stage-3+): cd client && npm run tauri dev"
+    cd client && npm run tauri dev
 
 # server + 共有 protocol の契約テストを通す
 # 段階6-3 以降の Tauri アプリ本体 (client/src-tauri/) は Mac/Windows 実機で
